@@ -17,6 +17,24 @@ created_at = data_criacao.strftime("%Y-%m-%d %H:%M:%S")
 
 user_bp = Blueprint('usuario', __name__)
 
+@user_bp.route("/usuario/login", methods=["POST"])
+def login():
+   data = request.json
+   
+   usuario = (database.session.query(Usuario).where(
+      Usuario.nome_completo == data.get("nome_completo"),
+      Usuario.email == data.get("email"),
+      Usuario.cpf == data.get("cpf"),
+      Usuario.senha_hash == hash_senha(data.get("senha_hash"))
+   ).first())
+
+   if usuario:
+      return jsonify({"mensagem": "Usuário encontrado"}), 200
+   else:
+      return jsonify({"mensagem": "Usuário não encontrado"}), 404
+   
+
+
 @user_bp.route("/usuario/cadastro", methods=["GET", "POST"])
 def user_register():
    data = request.json
