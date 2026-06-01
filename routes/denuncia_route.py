@@ -199,5 +199,37 @@ def edit_report_put(id_denuncia):
       return jsonify({"mensagem": "Denúncia não encontrado"}), 404
    
 
+@denuncia_bp.route("/denuncia/get-location")
+def get_point_location():
+   latitude = request.args.get('lat', '')
+   longitude = request.args.get('long', '')
+   
 
-      
+   response_mapbox = req.get(f"https://api.mapbox.com/search/geocode/v6/reverse?longitude={longitude}&latitude={latitude}&access_token={access_token_mapbox}")
+
+   info = response_mapbox.json()
+   CEP = info['features'][0]['properties']['context']['postcode']['name']
+   CEP_formatado = CEP.replace("-", "")
+
+   response_viacep = req.get(f"https://viacep.com.br/ws/{CEP_formatado}/json/")
+   info_viacep = response_viacep.json()
+
+   bairro = info_viacep["bairro"]
+   rua = info_viacep["logradouro"]
+   cidade = info_viacep["localidade"]
+   uf = info_viacep["uf"]
+
+   return jsonify({
+      "endereco": {
+            "rua": rua,
+            "bairro": bairro,
+            "CEP": CEP,
+            "cidade": cidade,
+            "uf": uf,
+            "coordenadas": {
+               "latitude": latitude,
+               "longitude": longitude
+            },
+           
+         },
+   })
