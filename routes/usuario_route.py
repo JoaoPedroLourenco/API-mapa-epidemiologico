@@ -22,14 +22,15 @@ def login():
    data = request.json
    
    usuario = (database.session.query(Usuario).where(
-      Usuario.nome_completo == data.get("nome_completo"),
       Usuario.email == data.get("email"),
-      Usuario.cpf == data.get("cpf"),
       Usuario.senha_hash == hash_senha(data.get("senha_hash"))
    ).first())
 
    if usuario:
-      return jsonify({"mensagem": "Usuário encontrado"}), 200
+      return jsonify({
+          "mensagem": "Usuário encontrado",
+          "id": usuario.ID_Usuario
+      }), 200
    else:
       return jsonify({"mensagem": "Usuário não encontrado"}), 404
    
