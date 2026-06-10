@@ -26,59 +26,57 @@ denuncia_bp = Blueprint('denuncia', __name__)
 
 #####################################
 # DENUNCIAS
-@denuncia_bp.route("/denuncia/registrar", methods=["POST", "GET"])
+@denuncia_bp.route("/denuncia/registrar", methods=["POST"])
 def register_report():
-   data = request.json
-   if request.method == "POST":
-      id_usuario = data.get("usuario_id")
-      usuario = database.session.query(Usuario).filter_by(ID_Usuario = id_usuario).first()
-      if usuario:
-         try:
-            latitude = data.get("latitude")
-            longitude = data.get("longitude")
-            descricao = data.get("descricao")
-            foto_urls = data.get("foto_url", [])
+    id_usuario = request.form.get("usuario_id")
+    
+    if not id_usuario:
+        return jsonify({"mensagem": "ID do usuário não enviado."}), 400
+
+    usuario = database.session.query(Usuario).filter_by(ID_Usuario=id_usuario).first()
+    
+    if usuario:
+        try:
+            latitude = request.form.get("latitude")
+            longitude = request.form.get("longitude")
+            descricao = request.form.get("descricao")
+            foto = request.files.get("foto")
             
-
             response_mapbox = req.get(f"https://api.mapbox.com/search/geocode/v6/reverse?longitude={longitude}&latitude={latitude}&access_token={access_token_mapbox}")
-
             info = response_mapbox.json()
+            
             CEP = info['features'][0]['properties']['context']['postcode']['name']
             CEP_formatado = CEP.replace("-", "")
 
             response_viacep = req.get(f"https://viacep.com.br/ws/{CEP_formatado}/json/")
             info_viacep = response_viacep.json()
 
-            bairro = info_viacep["bairro"]
-            rua = info_viacep["logradouro"]
+            bairro = info_viacep.get("bairro", "")
+            rua = info_viacep.get("logradouro", "")
             
             new_report = Denuncia(
-               usuario_id = id_usuario,
-               latitude = latitude,
-               longitude = longitude,
-               rua = rua,
-               bairro = bairro,
-               descricao = descricao,
-               status = "PENDENTE",
-               data_registro = created_at,
-               data_resolucao = None
+               usuario_id=id_usuario,
+               latitude=latitude,
+               longitude=longitude,
+               rua=rua,
+               bairro=bairro,
+               descricao=descricao,
+               status="PENDENTE",
+               data_registro=created_at,
+               data_resolucao=None
             )
 
             database.session.add(new_report)
             database.session.flush()
 
-            for url in foto_urls:
-               new_foto = DenunciaFoto(
-               denuncia_id = new_report.ID_Denuncia,
-               foto_url = url
-               )
-               database.session.add(new_foto)
+            if foto:
+                new_foto = DenunciaFoto(
+                   denuncia_id=new_report.ID_Denuncia,
+                   foto_url=foto.filename  
+                )
+                database.session.add(new_foto)
 
             database.session.commit()
-
-            denuncia_fotos = database.session.query(DenunciaFoto.foto_url).join(Denuncia, Denuncia.ID_Denuncia == DenunciaFoto.denuncia_id).filter(DenunciaFoto.denuncia_id == new_report.ID_Denuncia).all()
-
-            fotos = [foto[0] for foto in denuncia_fotos]
 
             return jsonify({
                "usuario": usuario.nome_completo,
@@ -90,42 +88,18 @@ def register_report():
                   "rua": new_report.rua,
                   "bairro": new_report.bairro
                },
-               "imagens": fotos,
                "descricao": new_report.descricao,
                "status": new_report.status,
-               "data_registro": new_report.data_registro,
-               "data_resolucao": new_report.data_resolucao 
+               "data_registro": new_report.data_registro
             }), 201
-         except:
+
+        except Exception as e:
+            database.session.rollback()
+            print(f"Erro interno: {e}")
             return jsonify({"mensagem": "Houve um erro, tente novamente mais tarde"}), 500
       
-      else:
-         return jsonify({"Mensagem": "Usuário não encontrado, se cadastre ou entre em sua conta!"}), 404
-      
-   database.session.close()
-   
-@denuncia_bp.route("/denuncias", methods=["GET"])
-def fetch_all_reports():
-   reports = Denuncia.query.all()
-
-   if reports:
-      retorno = [{
-            "usuario_id": report.usuario_id,
-            "endereco": {
-               "coordenadas": {
-                  "latitude": report.latitude,
-                  "longitude": report.longitude
-               },
-               "rua": report.rua,
-               "bairro": report.bairro
-            },
-            "descricao": report.descricao,
-            "status": report.status,
-            "data_registro": report.data_registro,
-            "data_resolucao": report.data_resolucao 
-         } for report in reports]
-   
-   return jsonify(retorno), 200
+    else:
+        return jsonify({"mensagem": "Usuário não encontrado, se cadastre ou entre em sua conta!"}), 404
 
 @denuncia_bp.route("/denuncia/<id_denuncia>", methods=["GET"])
 def search_report(id_denuncia):
