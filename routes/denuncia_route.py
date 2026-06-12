@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from database import db as database
 from datetime import datetime
 
@@ -23,6 +24,8 @@ access_token_mapbox = os.getenv("access_token_mapbox")
 
 denuncia_bp = Blueprint('denuncia', __name__)
 
+UPLOAD_FOLDER = "uploads"
+
 
 #####################################
 # DENUNCIAS
@@ -41,6 +44,10 @@ def register_report():
             longitude = request.form.get("longitude")
             descricao = request.form.get("descricao")
             foto = request.files.get("foto")
+
+            caminho = os.path.join(UPLOAD_FOLDER, foto.filename)
+
+            foto.save(caminho)
             
             response_mapbox = req.get(f"https://api.mapbox.com/search/geocode/v6/reverse?longitude={longitude}&latitude={latitude}&access_token={access_token_mapbox}")
             info = response_mapbox.json()
@@ -101,6 +108,34 @@ def register_report():
     else:
         return jsonify({"mensagem": "Usuário não encontrado, se cadastre ou entre em sua conta!"}), 404
 
+###################################
+# todas as denúncias
+@denuncia_bp.route("/denuncias", methods=["GET"])
+def fetch_all_reports():
+   reports = Denuncia.query.order_by(Denuncia.data_registro.desc()).all()
+
+   if reports:
+      retorno = [{
+            "usuario_id": report.usuario_id,
+            "endereco": {
+               "coordenadas": {
+                  "latitude": report.latitude,
+                  "longitude": report.longitude
+               },
+               "rua": report.rua,
+               "bairro": report.bairro
+            },
+            "descricao": report.descricao,
+            "status": report.status,
+            "data_registro": report.data_registro,
+            "data_resolucao": report.data_resolucao 
+         } for report in reports]
+   
+   return jsonify(retorno), 200
+
+
+###########################
+#denuncia específica
 @denuncia_bp.route("/denuncia/<id_denuncia>", methods=["GET"])
 def search_report(id_denuncia):
    report = database.session.query(Denuncia).filter_by(ID_Denuncia = id_denuncia).first()
@@ -207,3 +242,45 @@ def get_point_location():
            
          },
    })
+
+###############################
+#relatório
+@denuncia_bp.route("/denuncias/relatorio")
+def generate_relatorio_by_neighborhood():
+    denuncias = (
+        database.session.query(
+            Denuncia.bairro,
+            Denuncia.rua,
+            func.count(Denuncia.ID_Denuncia).label("quantidade")
+        )
+        .group_by(Denuncia.bairro, Denuncia.rua)
+        .all()
+    )
+
+    bairros = {}
+
+    for denuncia in denuncias:
+
+        if denuncia.bairro not in bairros:
+            bairros[denuncia.bairro] = {
+                "total_bairro": 0,
+                "ruas": []
+            }
+
+        bairros[denuncia.bairro]["total_bairro"] += denuncia.quantidade
+
+        bairros[denuncia.bairro]["ruas"].append({
+            "rua": denuncia.rua,
+            "quantidade": denuncia.quantidade
+        })
+
+    resultado = []
+
+    for bairro, dados in bairros.items():
+        resultado.append({
+            "bairro": bairro,
+            "total_bairro": dados["total_bairro"],
+            "ruas": dados["ruas"]
+        })
+
+    return jsonify(resultado)
