@@ -6,6 +6,7 @@ from datetime import datetime
 import hashlib
 
 from models.usuario_model import Usuario
+from models.denuncia_model import Denuncia
 
 def hash_senha(txt):
    hash_obj = hashlib.sha256(txt.encode('utf-8'))
@@ -22,14 +23,15 @@ def login():
    data = request.json
    
    usuario = (database.session.query(Usuario).where(
-      Usuario.nome_completo == data.get("nome_completo"),
       Usuario.email == data.get("email"),
-      Usuario.cpf == data.get("cpf"),
       Usuario.senha_hash == hash_senha(data.get("senha_hash"))
    ).first())
 
    if usuario:
-      return jsonify({"mensagem": "Usuário encontrado"}), 200
+      return jsonify({
+          "mensagem": "Usuário encontrado",
+          "id": usuario.ID_Usuario
+      }), 200
    else:
       return jsonify({"mensagem": "Usuário não encontrado"}), 404
    
@@ -163,6 +165,26 @@ def edit_user_info_patch(id_usuario):
       return jsonify({"Mensagem": "Usuário não encontrado"}), 404
       
 
+@user_bp.route("/usuario/<id_usuario>/denuncias")
+def get_user_reports(id_usuario):
+   user_reports = database.session.query(Denuncia).join(Usuario, Denuncia.usuario_id == Usuario.ID_Usuario).filter(Usuario.ID_Usuario == id_usuario).all()
 
+   if user_reports:
+      retorno = [{
+         "usuario_id": user_report.usuario_id,
+         "endereco": {
+            "coordenadas": {
+               "latitude": user_report.latitude,
+               "longitude": user_report.longitude
+            },
+            "rua": user_report.rua,
+            "bairro": user_report.bairro
+         },
+         "descricao": user_report.descricao,
+         "status": user_report.status,
+         "data_registro": user_report.data_registro,
+         "data_resolucao": user_report.data_resolucao } for user_report in user_reports], 200
       
-   
+      return retorno
+   else:
+      return jsonify({"mensagem": "usuário ainda sem denúncias cadastradas."})
